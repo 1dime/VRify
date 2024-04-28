@@ -1,9 +1,17 @@
 package com.onedime.vrify.server;
 
+import java.io.ByteArrayOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
-import java.net.DatagramPacket;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.lang.System.Logger;
 import java.net.DatagramSocket;
-import java.net.SocketException;
+import java.net.ServerSocket;
+import java.net.Socket;
+
+import javax.xml.crypto.Data;
 
 import com.onedime.vrify.FunctionData;
 import com.onedime.vrify.FunctionWrapper;
@@ -17,6 +25,9 @@ public class Server
 	private FunctionWrapper functions;
 	private int port = 0;
 	private ServerListener listener;
+	private Thread serverThread;
+	private boolean running = false;
+	private ServerSocket serverSocket;
 	
 	public Server(FunctionWrapper functions, int minPort, int maxPort, ServerListener listener)
 	{
@@ -34,20 +45,31 @@ public class Server
 	 */
 	public int generatePort(int minPort, int maxPort)
 	{
-		//First, generate a random port number
-		int port = (int) (Math.random() * (maxPort - minPort)) + minPort;
-		try
+		//For checking if a port is set, used in loop below
+		boolean foundPort = false;
+		//Loop until a port is found
+		while(!foundPort)
 		{
-			//Then, check if the port number is valid
-			DatagramSocket socket = new DatagramSocket(port);
-			socket.close();
-			//Port number is valid, return it
-			return port;
-		} catch (Exception e)
-		{
-			//Port number is not valid, try again
-			return generatePort(minPort, maxPort);
+			//First, generate a random port number
+			int port = (int) (Math.random() * (maxPort - minPort)) + minPort;
+			try
+			{
+				//Then, check if the port number is valid
+				DatagramSocket socket = new DatagramSocket(port);
+				socket.close();
+				//Valid port was found
+				foundPort = true;
+				//Port number is valid, return it
+				return port;
+			} catch (Exception e)
+			{
+				//Port number is not valid, try again
+				foundPort = false;
+			}
 		}
+		
+		//Return 0, this wont be reached
+		return 0;
 	}
 	
 	/*
@@ -90,6 +112,39 @@ public class Server
 		this.listener = listener;
 	}
 	
+
+	/*
+	 * Function: read
+	 * Reads data from socket
+	 * @socket: socket to send data to
+	 * @returns data from socket
+	 */
+	public byte[] read(Socket socket) throws IOException
+	{
+		//Read data using DataInputStream
+		DataInputStream inputStream = new DataInputStream(socket.getInputStream());
+		int length = inputStream.readInt();
+		byte[] data = new byte[length];
+		inputStream.readFully(data, 0, length);
+		
+		//And return it
+		return data;
+	}
+	
+	/*
+	 * Function: send
+	 * Sends data using socket
+	 * @socket: socket to send data using
+	 * @data: data to be sent
+	 */
+	public void send(Socket socket, byte[] data) throws IOException
+	{
+		//Send the data using DataOutputStream
+		DataOutputStream outputStream = new DataOutputStream(socket.getOutputStream());
+		outputStream.writeInt(data.length);
+		outputStream.write(data);
+	}
+	
 	/*
 	 * Function: start
 	 * Starts thread that makes a UDP server for this program
@@ -97,44 +152,94 @@ public class Server
 	public void start()
 	{
 		//Create a thread for serving using UDP
-		Thread serverThread = new Thread(new Runnable() {
+		this.serverThread = new Thread(new Runnable() {
 
 			@Override
 			public void run()
 			{
+				//Create a server on the given port and notify user
 				try
 				{
-					//Create a UDP server on this server's port with a reusable address
-					DatagramSocket serverSocket = new DatagramSocket(Server.this.getPort());
-					serverSocket.setReuseAddress(true);
+					Server.this.serverSocket = new ServerSocket(Server.this.getPort());
+					Server.this.serverSocket.setReuseAddress(true);
 					Server.this.listener.onServerStarted(Server.this.getPort());
-					//And serve potentially forever
 					do
 					{
-						//Do so by first receiving client data sent by client if client has connected
-						byte[] serializedClientData = new byte[1024];
-						DatagramPacket serializedPacket = new DatagramPacket(serializedClientData, serializedClientData.length);
-						serverSocket.receive(serializedPacket);
-						ClientData clientData = ClientData.deserialize(serializedClientData);
-						//And run the function that is requested with its parameters
-						FunctionData data = Server.this.functions.run(clientData.getFunctionName(), clientData.getParameters());
-						//After, send the results (function data) to the client
-						byte[] serializedFunctionData = data.serialize();
-						serverSocket.send(new DatagramPacket(serializedFunctionData, serializedFunctionData.length, serializedPacket.getAddress(), serializedPacket.getPort()));
-					} while(Server.this.runForever);
+						try {
+							//Listen for a connection from the client
+							Socket socket = Server.this.serverSocket.accept();
+							do
+							{
+								//Then get the data sent by client
+								byte[] serializedClientData = Server.this.read(socket);
+								ClientData clientData = ClientData.deserialize(serializedClientData);
+								//And notify user that client has connected
+								FunctionData dataReceived = Server.this.listener.onClientDataReceived(socket, clientData);
+								
+								//Now, run the requested function
+								FunctionData requestedFunction = Server.this.functions.run(clientData.getFunctionName(), clientData.getParameters());
+								
+								//And send both received data and requested function results
+								Server.this.send(socket, dataReceived.serialize());
+								Server.this.send(socket, requestedFunction.serialize());	
+							} while(Server.this.runForever && (!(socket.isClosed())));
+						}
+						catch(Exception e)
+						{
+							Server.this.listener.onErrorEncountered(e);
+						}
+					} while(((Server.this.runForever) && (Server.this.running))
+							|| (Server.this.serverSocket != null));
 					
-					//Finally, close the server
-					serverSocket.close();
-					Server.this.listener.onServerClosed(Server.this.getPort());
-				} catch (IOException | InterruptedException e)
+				} catch(IOException ioe)
 				{
-					//Encountered an error, handle it
-					Server.this.listener.onErrorEncountered(e);
+					Server.this.listener.onErrorEncountered(ioe);
 				}
 			}
 			
 		});
 		//And run that thread
 		serverThread.start();
+	}
+	
+	/*
+	 * Function: stop
+	 * Stops this server
+	 */
+	public void stop()
+	{
+		//Check if the server thread was set
+		if(this.serverThread != null)
+		{
+			//Check if the server socket is set
+			if(this.serverSocket != null)
+			{
+				try
+				{
+					//Stop the server thread
+					this.serverThread.interrupt();
+					//Close the server socket
+					this.serverSocket.close();
+					//And set isRunning to false
+					this.running = false;
+					//And notify that server was closed
+					Server.this.listener.onServerClosed(Server.this.getPort());
+				} catch (IOException e)
+				{
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+	
+	/*
+	 * Function: isRunning
+	 * Gets if server is running
+	 * @returns if server is running
+	 */
+	public boolean isRunning()
+	{
+		return this.running;
 	}
 }
