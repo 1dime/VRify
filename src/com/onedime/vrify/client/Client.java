@@ -8,8 +8,10 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.Socket;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -74,47 +76,47 @@ public class Client
 		this.runForever = runForever;
 	}
 
-	public boolean isDeviceServer(String ipAddress, int port)
+	static boolean isDeviceServer(String ipAddress, int port)
 	{
 		try
 		{
 			// Now convert that to an InetAddress
 			InetAddress address = InetAddress.getByName(ipAddress);
 			// Then make a datagram socket for checking if device is running VRify
-			DatagramSocket clientSocket = new DatagramSocket();
+			Socket clientSocket = new Socket(address, port);
 			clientSocket.setReuseAddress(true);
 			clientSocket.setSoTimeout(100);
-
-			// Now, create a new instance of client data that runs Constants.IS_SERVER on
-			// server for checking
-			// and serialize it before sending
-			byte[] serializedClientData = new ClientData(Client.this.deviceName, Constants.IS_SERVER, null).serialize();
-			clientSocket.send(new DatagramPacket(serializedClientData, serializedClientData.length, address, port));
-
-			// Now get the response from the device as an instance of FunctionData
-			byte[] serializedResponse = new byte[1024];
-			clientSocket.receive(new DatagramPacket(serializedResponse, serializedResponse.length));
-			FunctionData data = FunctionData.deserialize(serializedResponse);
-
-			// And check if the device is a server by checking if results in data is TRUE
-			if (data.getResults().toString().equals(Constants.TRUE))
+			
+			//Create a simple Client instance
+			Client client = new Client(null, null, 0, false);
+			//Now check if the given address and port point to a VRify server
+			byte[] isServerData = new ClientData(null, Constants.IS_SERVER, null).serialize();
+			client.send(clientSocket, isServerData);
+			
+			//And get the response from the server
+			byte[] serverResponse = client.read(clientSocket);
+			client.read(clientSocket);
+			
+			FunctionData serverResponseData = FunctionData.deserialize(serverResponse);
+			if(serverResponseData.getResults().toString().equals(Constants.TRUE))
 			{
-				// Device is a server, return true
+				//Device is a server
 				clientSocket.close();
 				return true;
 			}
-			// Finally, close the client socket
+			
+			//Close the client socket before returning false
 			clientSocket.close();
 		} catch (IOException e)
 		{
 			// TODO Auto-generated catch block
-			// e.printStackTrace();
+			//e.printStackTrace();
 		}
 		// And return false
 		return false;
 	}
 
-	public List<String> findDevices(String subnet, int minPort, int maxPort) throws InterruptedException
+	public static List<String> findDevices(String subnet, int minPort, int maxPort) throws InterruptedException
 	{
 		FindDevicesThread findThread = new FindDevicesThread(subnet, minPort, maxPort);
 		findThread.start();
@@ -239,7 +241,7 @@ public class Client
 		return this.clientSocket;
 	}
 
-	class FindDevicesThread extends Thread
+	static class FindDevicesThread extends Thread
 	{
 		private List<String> devices = new ArrayList<>();
 		private int minPort = 0;
@@ -260,19 +262,39 @@ public class Client
 			System.out.println("Searching for VRify server, this can take a few minutes...");
 			// We have the subnet, we need to make the final part of the address
 			// So loop from 0 to 255
-			for (int addressPart = 0; addressPart < 255; addressPart++)
+			for(int addressPart0 = 0; addressPart0 < 255; addressPart0++)
 			{
-				// We also need to find whatever port is being used
-				// So loop from minPort to maxPort
-				for (int port = minPort; port < maxPort; port++)
+				//Get part of address by adding addressPart0 to subnet
+				String address = subnet + "." + addressPart0;
+				for (int addressPart1 = 0; addressPart1 < 255; addressPart1++)
 				{
-					// Form an ip address string using subnet and addressPart
-					String ipAddress = subnet + "." + addressPart;
-					// And check if the ipAddress and port are a VRify server
-					if (Client.this.isDeviceServer(ipAddress, port))
+					// We also need to find whatever port is being used
+					// So loop from minPort to maxPort
+					for (int port = minPort; port < maxPort; port++)
 					{
-						// Add the ipAddress and port to devices list
-						FindDevicesThread.this.devices.add(ipAddress + ":" + port);
+						// Form an ip address string using subnet and addressPart
+						String ipAddress = address + "." + addressPart1;
+						System.out.println("Testing ip address: " + ipAddress + ":" + port);
+						// And check if the ipAddress and port are a VRify server
+						try
+						{
+							if(InetAddress.getByName(ipAddress).isReachable(100))
+							{
+								if (Client.isDeviceServer(ipAddress, port))
+								{
+									// Add the ipAddress and port to devices list
+									FindDevicesThread.this.devices.add(ipAddress + ":" + port);
+								}
+							}
+						} catch (UnknownHostException e)
+						{
+							// TODO Auto-generated catch block
+							//e.printStackTrace();
+						} catch (IOException e)
+						{
+							// TODO Auto-generated catch block
+							//e.printStackTrace();
+						}
 					}
 				}
 			}

@@ -55,7 +55,7 @@ public class Server
 			try
 			{
 				//Then, check if the port number is valid
-				DatagramSocket socket = new DatagramSocket(port);
+				ServerSocket socket = new ServerSocket(port);
 				socket.close();
 				//Valid port was found
 				foundPort = true;

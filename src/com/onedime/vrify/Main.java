@@ -11,72 +11,11 @@ import java.net.UnknownHostException;
 import com.onedime.vrify.client.Client;
 import com.onedime.vrify.client.ClientData;
 import com.onedime.vrify.client.ClientListener;
+import com.onedime.vrify.server.Server;
 import com.onedime.vrify.server.ServerListener;
 
 public class Main
 {
-	private static int i = 0;
-	private static ClientListener listener = new ClientListener() {
-
-		@Override
-		public void onServerResponseReceived(FunctionData serverResponse)
-		{
-			//Received a response from the server
-			System.out.println("Received response from server!");
-			File file = new File("C:\\Users\\bremo\\screenshots\\screenshot_" + i + ".png");
-			Object results = serverResponse.getResults();
-			if(results instanceof byte[])
-			{
-				byte[] data = (byte[]) results;
-				try
-				{
-					BufferedOutputStream outputStream = new BufferedOutputStream(new FileOutputStream(file));
-					outputStream.write(data);
-					outputStream.flush();
-					outputStream.close();
-					i += 1;
-					Thread.sleep(1);
-				} catch (Exception e)
-				{
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
-				
-			}
-		}
-
-		@Override
-		public void onDataSentToServer(ClientData data, InetAddress serverAddress, int serverPort)
-		{
-			//Sent data to server
-			System.out.println("Sent data to server!");
-		}
-
-		@Override
-		public void onClientConnectionShutdown(InetAddress serverAddress, int serverPort)
-		{
-			//Connection to server shutdown
-			System.out.println("Shutdown connection to server!");
-		}
-		
-		@Override
-		public ClientData getFunctionToRun()
-		{
-			//This is a sample, have server run IS_SERVER
-			//For future reference, this function determines what function should be ran
-			//based on headset and controller sensor data, and controller input.
-			ClientData data = new ClientData("HunnyBuns", Constants.IS_SERVER, null);
-			return data;
-		}
-		
-		@Override
-		public void onErrorEncountered(Exception error)
-		{
-			//We encountered an error
-			System.out.println("We encountered an error: " + error.getMessage());
-		}
-	};
-	
 	private static ServerListener serverListener = new ServerListener() 
 	{
 
@@ -117,14 +56,21 @@ public class Main
 		return Constants.TRUE;
 	}
 	
+	public static Object sendToWebsite(Object ...parameters)
+	{
+		return 404;
+	}
+	
 	public static void main(String[] args) throws InterruptedException
 	{
 		try
 		{
-			Client client = new Client("HunnyBuns", InetAddress.getByName("10.23.0.123"), 1187 , true);
-			client.setListener(listener);
-			client.start();
-		} catch (UnknownHostException e)
+			FunctionWrapper wrapper = new FunctionWrapper();
+			wrapper.addFunction("sendToWebsite", Main::sendToWebsitecmd);
+			Server server = new Server(wrapper, 443, 443, serverListener);
+			server.start();
+			
+		} catch (Exception e)
 		{
 			// TODO Auto-generated catch block
 			e.printStackTrace();
