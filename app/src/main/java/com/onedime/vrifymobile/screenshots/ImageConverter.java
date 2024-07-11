@@ -10,6 +10,8 @@ import android.view.Surface;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ImageConverter implements ImageReader.OnImageAvailableListener
 {
@@ -18,6 +20,7 @@ public class ImageConverter implements ImageReader.OnImageAvailableListener
     private ImageReader reader;
     private ScreenshotService screenshotService;
     private Bitmap lastScreenshot;
+    private List<byte[]> recentScreenshots = new ArrayList<>();
 
     public ImageConverter(ScreenshotService service)
     {
@@ -38,6 +41,16 @@ public class ImageConverter implements ImageReader.OnImageAvailableListener
         this.reader.setOnImageAvailableListener(this, this.screenshotService.getHandler());
     }
 
+    private byte[][] convertToArray(List<byte[]> bitmapList)
+    {
+        byte[][] images = new byte[bitmapList.size()][];
+        for(int index = 0; index < bitmapList.size(); index++)
+        {
+            images[index] = bitmapList.get(index);
+        }
+
+        return images;
+    }
     @Override
     public void onImageAvailable(ImageReader imageReader)
     {
@@ -45,33 +58,35 @@ public class ImageConverter implements ImageReader.OnImageAvailableListener
         if(image != null)
         {
             Image.Plane[] planes = image.getPlanes();
-            Image.Plane plane = planes[0];
-            ByteBuffer buffer = plane.getBuffer();
-            int pixelStride = plane.getPixelStride();
-            int rowStride = plane.getRowStride();
-            int padding = rowStride - pixelStride * width;
-            int bitmapWidth = width + padding / pixelStride;
-
-            if(lastScreenshot == null ||
-                lastScreenshot.getWidth() != bitmapWidth ||
-                lastScreenshot.getHeight() != height)
+            for(int index = 0; index < planes.length; index++)
             {
-                if(lastScreenshot != null)
+                Image.Plane plane = planes[index];ByteBuffer buffer = plane.getBuffer();
+                int pixelStride = plane.getPixelStride();
+                int rowStride = plane.getRowStride();
+                int padding = rowStride - pixelStride * width;
+                int bitmapWidth = width + padding / pixelStride;
+
+                if(lastScreenshot == null ||
+                        lastScreenshot.getWidth() != bitmapWidth ||
+                        lastScreenshot.getHeight() != height)
                 {
-                    lastScreenshot.recycle();
+                    if(lastScreenshot != null)
+                    {
+                        lastScreenshot.recycle();
+                    }
+
+                    lastScreenshot = Bitmap.createBitmap(bitmapWidth, height, Bitmap.Config.ARGB_8888);
                 }
 
-                lastScreenshot = Bitmap.createBitmap(bitmapWidth, height, Bitmap.Config.ARGB_8888);
+                lastScreenshot.copyPixelsFromBuffer(buffer);
+                image.close();
+
+                ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
+                Bitmap cropped = Bitmap.createBitmap(lastScreenshot, 0, 0, width, height);
+                cropped.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
+                byte[] imageData = outputStream.toByteArray();
+                this.screenshotService.handleImage(imageData);
             }
-
-            lastScreenshot.copyPixelsFromBuffer(buffer);
-            image.close();
-
-            ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-            Bitmap cropped = Bitmap.createBitmap(lastScreenshot, 0, 0, width, height);
-            cropped.compress(Bitmap.CompressFormat.PNG, 100, outputStream);
-            byte[] imageData = outputStream.toByteArray();
-            this.screenshotService.handleImage(imageData);
             this.getSurface().release();
             this.close();
         }

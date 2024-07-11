@@ -5,8 +5,9 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
-
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
     <application
         android:allowBackup="true"
@@ -18,10 +19,17 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.VRifyMobile"
         tools:targetApi="31">
+        <service
+            android:name=".recorder.StreamRecorderService"
+            android:enabled="true"
+            android:exported="true"
+            android:foregroundServiceType="mediaProjection"
+            />
+
         <receiver
             android:name=".AddressReceiver"
             android:enabled="true"
-            android:exported="true"></receiver>
+            android:exported="true" />
         <receiver
             android:name=".ImageReceiver"
             android:enabled="true"
@@ -36,6 +44,11 @@
         <activity
             android:name=".screenshots.ScreenshotActivity"
             android:exported="false" />
+
+        <activity
+            android:name=".recorder.RecordingActivity"
+            android:exported="false"
+            />
 
         <service
             android:name=".server.ServerService"

@@ -59,7 +59,7 @@ public class MainActivity extends AppCompatActivity
         ipAddress = (TextView) findViewById(R.id.ip_address);
         //Now make the intent for our server service
         Intent serverIntent = new Intent(this, ServerService.class);
-        Intent screenshotIntent = new Intent(MainActivity.this, ScreenshotService.class);
+        Intent streamIntent = new Intent(MainActivity.this, ScreenshotService.class);
         LocalBroadcastManager broadcastManager = LocalBroadcastManager.getInstance(this);
         //And assign click actions to both
         startButton.setOnClickListener(new View.OnClickListener()
@@ -67,8 +67,8 @@ public class MainActivity extends AppCompatActivity
             @Override
             public void onClick(View view)
             {
-                screenshotIntent.setAction(ScreenshotService.ACTION_RECORD);
-                startService(screenshotIntent);
+                streamIntent.setAction(ScreenshotService.ACTION_RECORD);
+                startService(streamIntent);
                 //Start the server service
                 startService(serverIntent);
 
@@ -93,7 +93,7 @@ public class MainActivity extends AppCompatActivity
             public void onClick(View view)
             {
                 //Stop the server service
-                stopService(screenshotIntent);
+                stopService(streamIntent);
                 stopService(serverIntent);
             }
         });
